@@ -1,0 +1,396 @@
+######
+Encryption 101
+######
+https://en.wikipedia.org/wiki/Key_(cryptography)
+In cryptography, a key is a piece of information (parameter) that determines the functional output of a cryptographic algorithm
+
+for encryption algorithms, a key specifies the transformation of plaintext to ciphertext
+for decryption algorithms, a key specifies the transformation from ciphertext to plaintext
+keys are essentially super random computer generated password
+
+symmetric key algorithm - use the same key for both encryption + decryption
+
+asymmetric key alorithm - use a public key and a private key
+ex: SSH with RSA keypair
+public key - used for encryption
+private key - used for decryption
+
+## encryption in flight
+uses server sockets layer (SSL)/Transport Layer Security (TLS) encryption protocols
+
+data is encrypted before sending and decrypted after receiving
+only myself + the server can see the plain text
+"in flight" over the public internet the data is encrypted
+ensures no MITM (man in the middle attack) can happen
+
+ex: sending credit card info a server to make a payment
+want to make sure no one else on the way can see credit card #
+sending to HTTPS website = guarantees SSL enabled
+
+https://www.cloudflare.com/learning/ssl/what-is-https/
+when a user connects to a website, the website sends over its SSL certificate which contains the public key
+client + server then go through SSL/TLS handshake = series of back + forth communications used to establish secure connection
+
+## server side encryption at rest
+after the server receives data, it is encrypted + stored on the server
+data will need to be decrypted before being sent back to client
+
+encryption/decryption keys are managed by AWS KMS
+the server must have access to KMS
+
+### example using SSL and SSE
+object > securely transmitted over internet using HTTPS > AWS EBS
+EBS uses data key to encrypt data for storage
+EBS uses data key to decrypt data > transmit object over HTTPS > client
+
+## client side encryption
+data is encrypted by the client
+the server will never be able to decrypt that data
+the data will be decrypted by a receiving client
+
+### example using client side encryption
+on client computer we have a data key
+we encrypt the plaintext message on the local machine
+send encrypted data > S3 for storage
+client computer then gets object from S3
+uses data key on client computer to decrypt data
+
+####
+VPC
+####
+Virtual Private Cloud
+provision a logically isolated section of the AWS cloud
+where you can launch AWS resources in a virtual network that you define
+
+example setup:
+public facing subnet for your web servers that have access to the internet
+place backend systems (DB, app servers) in a private facing subnet with no internet access
+can use multiple layers of security - security groups, network access control lists - to help control access to the EC2 instances in each subnet
+
+####
+KMS (Key Management Service)
+####
+Anytime you need to share sensitive info use KMS
+Ex: DB password, creds to external service
+
+Never store secrets in plaintext file in your code!
+Can use KMS API to retrieve value in code
+Make sure IAM policy allows for API calls
+
+Encrypts up to 4KB of data
+If data > 4 KB use envelope encryption
+
+AWS manages encryption keys for us
+- Create key
+- Rotation policies
+- Disable key
+- Enable key
+
+Can audit key usage using CloudTrail
+
+How does KMS work?
+Encrypt + Decrypt API
+Client > KMS Encrypt API > make a request to KMS CMK > checks IAM to make sure user/role has permissions > if so then KMS returns the encrypted secret > client stores encrypted secret
+Client > KMS Decrypt API > make a request  to KMS CMK > check IAM to make sure user/role has permissions > if so KMS returns the decrypted secret in plain text
+
+Encryption in AWS services
+S3 allows you to encrypt in place
+
+#####
+Cloud HSM
+#####
+KMS - AWS manages software for encryption
+CloudHSM - AWS provisions encryption hardware but client has to manage the software
+Client manages their own encryption keys
+Dedicated hardware = Hardware Security Module (HSM)
+Supposed to be "temper resistant"
+Cluster spread across multi AZ
+Supports symmetric + asymmetric encryption
+No free tier
+Must use CloudHMS client software
+
+######
+Kinesis
+######
+Data Streams:
+SSL endpoints using HTTPS protocol
+KMS offers server side encryption
+client side encryption - will need to use your own encryption libraries
+supported interface for VPC endpoints/private link
+KCL - read from Kinesis - must grant read/write access to DynamoDB table to keep track of checkpointing
+
+Data Firehose:
+Attach IAM role to enable delivery to S3/ElasticSearch/Redshift/Splunk
+Encrypt delivery stream with KMS (SSE)
+supported interface for VPC endpoints/private link
+
+Data Analytics:
+Attach IAM role so it can read from Kinesis Data Streams + reference sources and write to output destination
+
+#####
+SQS
+#####
+Encryption in flight using HTTPS endpoint
+SSE using KMS
+SQS queue access policy - ensure user has access to SQS service - similar to S3 bucket policy
+Client side encryption must be implemented manually
+VPC endpoint
+
+####
+AWS IoT
+####
+AWS IoT policy - attached to X.509 certificates or Cognito identies
+can revoke any device at any time
+can be attached to groups, not just individual things
+
+####
+S3
+####
+S3 bucket policy - manage access at the bucket level
+Access Control Lists (ACLs) - manage access at the object level
+VPC endpoint provided through a Gateway endpoint
+Glacier - vault lock policies prevent deletes (WORM - write once read many)
+
+####
+DynamoDB
+####
+data encrypted in transit using TLS (HTTPS)
+data can be encrypted at rest
+for new tables - use KMS encryption for base tables + secondary indexes
+for existing tables - need to migrate unencrypted table to a new table with KMS encryption enabled
+encryption cannot be disabled once enabled
+
+DynamoDB streams currently does not support encryption
+VPC endpoint
+
+####
+RDS
+####
+deployed within VPC = network isolation
+Security groups control network access to DB instances
+KMS encryption at rest
+SSL provides encryption in flight
+IAM policies provide protection to RDS API itself, not for protection from within the database
+IAM auth is supported by PostgreSQL and MySQL - allows you to connect without needing a password
+Must manage user perms within the database itself - traditional DBA work
+MSSQL and Oracle TDE (Transparent Data Encryption)
+
+####
+Aurora
+####
+Same security stuff as RDS
+Just a special serverless version of RDS supporting PostgreSQL + MySQL only
+
+###
+Lambda
+###
+Must have IAM role attached to it - defines permissions of what it can do
+Sources of data
+Targets of data
+KMS encryption for secrets
+SSM (Systems Manager) parameter store for configuration
+Encrypt secrets within SSM with KMS
+CloudWatch logs
+Deploy within VPC to access private resources
+
+####
+Glue
+####
+Configure Glue to only access JDBC through SSL
+
+Data Catalog
+- Encrypted by KMS = encrypted at rest
+- Resource policies to protect data catalog resources (similar to S3 bucket policy)
+
+connection passwords can be encrypted by KMS
+data written by AWS Glue - Security Configs
+- S3 encryption mode
+- Cloudwatch encryption mode
+- Job bookmark encryption mode
+
+####
+EMR
+####
+
+## secure access
+suggested reading:
+https://aws.amazon.com/blogs/big-data/best-practices-for-securing-amazon-emr/
+
+use EC2 key pair to manage SSH access to instances
+
+attach IAM roles to EC2 instances for
+- proper S3 access
+- for EMRFS requests to S3
+- DynamoDB scans through Hive
+
+EC2 security groups allow for node-to-node communication
+- one for master node
+- another one for the cluster nodes - core or task node
+
+Kerberos auth - provide auth from Active Directory to cluster
+Apache Ranger - centralized authorization (RBAC - Role Based Access) - setup on external EC2 instance
+
+## encryption
+at rest data encryption for EMRFS
+encryption in Amazon S3
+SSE-S3, SSE-KMS, Client side encryption
+SSE-C is not supported by EMRFS
+
+encryption in local disks
+- open source HDFS encryption
+- EC2 instance (physically attached to the cluster) store encryption
+  - NVMe encryption or LUKS encryption
+- EBS volumes (not physically attached, attached via network)
+  - EBS encryption using KMS works with the root volume
+  - LUKS encryption does not work with the root volume
+
+in transit encryption
+use TLS encryption for
+- node-to-node encryption
+- for EMRFS traffic between S3 and the cluster nodes
+
+####
+ElasticSearch
+####
+deploy within VPC
+enable ElasticSearch policy
+encyption at rest using KMS
+encryption in transit using SSL
+
+IAM or cognito based auth
+Amazon Congito allows end-users to log-in to Kibana via Microsoft Active Directory using SAML (SSO)
+
+####
+Redshift
+####
+VPC network isolation
+apply cluster security groups
+encryption in flight using JDBC driver enabled with SSL
+encryption at rest using KMS or HSM device
+
+role or access/secret key must be specified in SQL COPY + UNLOAD commands
+
+https://docs.aws.amazon.com/redshift/latest/dg/c_loading-encrypted-files.html
+COPY supports
+SSE-S3
+SSE-KMS
+client-side encryption using client-side symmetric master key
+
+COPY does not support
+SSE-C
+client-side encryption with KMS managed customer master key
+client side encryption using customer provided asymmetric master key
+
+UNLOAD
+default SSE-S3
+alt options - SSE-KMS or client-side encryption
+
+####
+Athena
+####
+IAM policies to control access
+underlying data is in S3 so that is protected using S3 services - IAM policies, bucket policies, and ACLs
+encryption of data according to S3 standards - SSE-S3, SSE-KMS, CSE-KMS
+encryption in transit using TLS between Athena + S3 and JDBC
+fine grain accessed using AWS Glue Catalog
+
+#####
+Quicksight
+#####
+Standard
+- IAM users
+- Email based accounts
+
+Enterprise
+- Active Directory
+- Federated Login
+- Supports MFA
+- Encryption at rest + in SPICE
+
+Row level secuirty to control which users can see which rows
+
+#####
+STS - Security Token Service
+#####
+allows to grant limited + temp access to AWS resources
+valid up to 1 hour - must be refreshed
+used for
+- cross account access
+- federation - link Active Directory creds
+uses SAML (security assertion markup language)
+allows SSO = enables users to log in without using AWS creds
+
+#####
+Identity Federation
+#####
+let users outside of AWS to assume temporary role for accessing AWS resources
+user assumes identity provided access role
+you do not need to create IAM users
+user management is handled outside of AWS
+
+user > login > 3rd party > temp creds > user > access AWS
+
+## SAML Federation for enterprise
+integrate Active Directory or SAML 2.0 compliant
+typically used by enterprises to manage their user accounts
+provides access via AWS Console or CLI via temp creds
+no need to create IAM user for each of your employees
+
+client app > SAML compliant identity provider > authenticate user based on 3rd party data base > return SAML assertion (aka token) > assume role to AWS STS > return temp security creds to client > login to AWS
+
+## Custom Identity Broker App for Enterprise
+only if ID provider not compatible with SAML 2.0
+the ID broken must determine the appropriate IAM policy
+no longer using a third party to manage users
+have to build custom tooling
+
+## AWS Cognito Federated Identity Pools
+For an app - mobile or web
+goal - provide direct access to AWS resources from the client side
+how?
+log in to federated ID provider
+get temp AWS creds back from Federated Identity Pool
+these creds come with pre-defined IAM policy stating their perms
+
+use case
+provide temp access to S3 bucket using Facebook login
+
+####
+Policies
+####
+dynamically populate policy
+${aws:username}
+${aws.FederatedProvider}
+
+suggested links:
+https://docs.aws.amazon.com/AmazonS3/latest/dev/example-bucket-policies.html
+https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/specifying-conditions.html
+
+####
+CloudTrail
+####
+track API call made to your account
+enabled by default
+can move logs from CloudTrail into CloudWatch logs to query
+if a resource is deleted look at CloudTrail to identify who did it
+
+stores data for past 90 days
+stores create, modify, delete events by default
+trails > choose additional trails
+stores events in S3 for further analysis (Athena)
+default SSE-S3 encryption
+control access to S3 using IAM + bucket policy
+
+#####
+VPC Endpoints
+#####
+enhance security of network within VPC
+using VPC endpoints = connect to AWS services using a private network instead of the public internet
+uses route tables to link service
+scale horizontally
+avoid having to stand up a NAT gateway yourself
+
+Gateway endpoints provision a target and must be used in aroute table
+only work for S3 and DynamoDB
+
+Interface provisions an ENI (private IP address) as an entry point and you must attach a security group

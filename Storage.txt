@@ -1,0 +1,562 @@
+#####
+S3
+#####
+If your file is larger than 5GB, you must use multi-part upload
+If your file is larger than 100MB, you should use it
+
+Read after write consistency for PUTS of new S3 objects
+As soon as the object is written, we can retrieve it
+PUT 200 > GET 200
+*Except if we did a GET before to see if the object exists
+GET 404 > PUT 200 > GET 404 = eventually consistent
+
+Eventual consistency for DELETES and PUTS of existing S3 objects
+PUT 200 > PUT 200 (update) > GET 200 (older version of object)
+DELETE 200 > GET 200 (eventually consistency = eventually delete)
+
+####
+S3 Storage Tiers
+####
+Make available while min cost
+
+S3 Standard - General Purpose
+Extremely high durability (11 9s)
+Availability 4 9s (99.99%)
+Sustain 2 concurrent facility failures - aka stored in 3 AZ
+Use cases - big data analytics, mobiling + gaming apps, content distribution
+
+S3 Reduced Redundancy Storage (RRS)
+Deprecated but may still be on exam
+Durability 4 9s (99.99%)
+Availability 4 9s (99.99%)
+Sustain loss of data in a single facility  - akastored in 2 AZ
+Use cases - noncritical, reproducible data at lower levels of redundancy
+
+S3 Infrequent Access (IA)
+Data that is less frequently accessed, but requires rapid access when needed
+Ex: Perform monthy analysis on some data = good use case vs perform analysis every 5 minutes = bad use case
+Extremely high durability (11 9s)
+Sustain 2 concurrent facility failures - aka stored in 3 AZ
+Low availability 99.9%
+Low cost compared to S3 standard
+Use as a data store for disaster recovery, backups
+
+S3 One Zone - Infrequent Access (IA)
+Same as IA but all data is stored in single AZ
+Extremely high durability (11 9s) in single AZ, but data will be loss if AZ is destroyed
+Low availability 99.5%
+Use case - secondary backup storing data you can recreate
+
+S3 Intelligent Tiering (new!)
+Small monthly monitoring + auto-tiering fee
+Automatically moves objects between 2 access tiers based on changing access patterns
+Extremely high durability (11 9s)
+Availability 99.9%
+
+S3 Glacier
+Low cost object storage
+Archiving/backup
+Data retained for long term (10+ years)
+Alt to on-prem magnetic tap storage
+Extremely high durability (11 9s)
+Cost per storage per month is very low
+Each item in Glacier = Archive = up to 40 TB
+Stored in Vaults (equivalent of bucket)
+3 retreival options - fast = expensive, slow = cheaper
+
+
+#####
+S3 Lifecycle Rules
+#####
+Set of rules to move data between tiers to save storage costs
+Transition actions - defines when objects are transitioned to another storage class
+Expiration actions - delete objects after a certain period of time
+Move to glacier for helpful for backup
+
+####
+S3 versioning
+####
+Enabled at bucket level
+Any time you overwrite a file you get a new version ID
+The cost of versioning = the cost of the additional S3 stored or requested
+
+Best practice to version your buckets
+You can protect against unintended deletes (ability to restore a previous version)
+Easy roll back to previous version
+Any file that is not versioned prior to enabling versioning will have version "null"
+You can suspend versioning
+
+Ex: If you have a big data job that overwrites a file, and the job failed, you can always revert back to the previous correct version
+
+####
+S3 costs
+####
+no charge for data transferred within a region via COPY request
+there is a charge for data transferred via COPY between reegions
+
+no charge for data transferred between EC2 + S3 within same region
+there is a cost between regions
+
+after free tier, there is a cost for PUT and GET but not DELETE requests
+
+Normal S3 pricing applies when your storage is accessed by another AWS account
+Best to keep the dev and prod accounts in the same region to avoid unnecessary transfer costs
+You can configure buckets as a Requester Pays bucket = requester account will be charged the cost of requests + downloads
+
+####
+S3 cross-region replication
+####
+asynchronous replication between 2 buckets in sepregions
+must enable versioning in source + dest bucket
+must give proper IAM perms
+can be in different accounts
+applies to new objects
+use case - compliance -  comply with stringent regulatory requirements for the storage of sensitive financial and personal data
+- big data analysis - if analysis is done by team in a distant country where the original bucket is
+
+####
+S3 ETag (Entity Tag)
+####
+how do you verify if a file has already been uploaded to S3?
+names work, but how are you sure that the content of the file is exactly the same?
+
+#####
+S3 performance
+#####
+historically
+greater than 100 TPS (transactions per second) > S3 performance degregation
+suggested to add a random prefix to the file name to improve S3 partition distribution and therefore improve performance
+
+now should only be required for extreme cases
+S3 can now support
+write = 3,500 requests per second
+read = 5,500 requests per second
+https://aws.amazon.com/about-aws/whats-new/2018/07/amazon-s3-announces-increased-request-rate-performance/
+
+increase PUT performance with multipart upload
+must use for objects > 5GB
+suggested to use for files > 100 MB
+allows PUTS to be parallelized = greater throughput
+max network bandwidth
+if one upload of a part fails > decrease time to try to retry
+
+increase GET performance with CloudFront
+cache S3 objects around the world
+
+S3 Transfer Acceleration
+PUT file to node close to client and AWS will transfer file on their internal network to deliver to the destination S3 bucket
+
+If using SS3-KMS encryption for S3, you may have limited S3 GET capability because KMS is limited to ~100 - 1000 TPS (transactions per sec)
+
+####
+S3 Encryption for Objects
+####
+*important exam topic
+4 methods
+
+1. SSE-S3
+SSE-S3 encrypts S3 objects using keys handled + managed by AWS S3
+object encrypted server side
+AES-256 encryption type
+must set header as "x-amz-server-side-encryption":"AES256" when PUT object
+then AWS will then create S3 managed data key and will be put in the bucket
+
+2. SSE-KMS
+SSE-KMS leverage AWS KMS (Key Management Service) to manage encryption keys
+advantages of KMS - more control over rotation of the key + audit logs
+must set header as "x-amz-server-side-encryption":"aws:kms" when PUT object
+KMS Customer Master Key (CMK) created + now managed by KMS
+
+SSE-C manage own encryption keys
+fully managed by user outside of AWS - no keys stored within AWS
+HTTPS must be used + provide data key in the header
+AWS throws away the key right away
+
+client side encryption - client handles encryption
+need to use AWS Encryption Client
+clients must encrypt data themselves before sending to S3
+clients must decrypt data when retrieving data from S3
+
+Encryption in transit (SSL)
+S3 exposes
+HTTP endpoint = non encrypted
+HTTPS endpoint = encryption in flight = suggested
+encryption in flight is also known as SSL/TLS
+
+you can set default encryption for the bucket in the console
+
+######
+S3 security
+######
+S3 CORS (Cross-Origin Resource Sharing)
+limit which websites can access files in your S3 buckets as specified in CORS config
+This website is working when we go online, but when you run the website offline on your local host it doesn't work. Why? CORS
+
+S3 Access Logs
+for audit purpose you may want to log all requests
+will log in another S3 bucket + can query via Athena
+
+User based
+IAM policies - which API calls should be allowed for specific user from IAM console
+
+Resource based
+Bucket policies = bucket wide rules from S3 console - like allow cross account access
+JSON based
+resources = buckets + objeects
+actions = allow or deny
+principal = account/user to apply policy to
+use case - grant public access to the bucket, force objects to be encrypted at upload, grant access from another account
+
+Object Access Control List (ACL) finer grain
+Bucket Access Control List (ACL) less common
+
+What is the best way to ensure all objects in the bucket are encrypted?
+old way = enable default encryption via bucket policy + refuse any HTTP command without proper headers
+new way = use default encryption in S3
+bucket policy trumps default encryption
+
+Other S3 security details
+networking - supports VPC endpoints
+logging + audit = S3 access logs or AWS CloudTrail
+user security = MFA can be required for versioned buckets to delete objects
+You can make an S3 object available to a user for a limited time period using signed URLs
+
+#####
+Glacier + Vault Policies
+#####
+low cost object storage for archiving + backup
+alt to on-prem magnetic tape storage
+
+each item in glacier = archive
+archives are stored in vaults
+
+Use glacier any time you want to archive from S3 after X days
+
+each vault has 1 vault access policy + 1 vault lock policy
+access policy = very similar to bucket policy - used for restricting user/account perms
+
+lock policy = chose to lock the archive for regulatory or compliance requirements
+the policy is immutable aka can never be changed
+ex: forbid deleting archive if less than 1 year old
+ex: implement WORM (write once read many) policy - guarantee that the file cannot be overwritten later
+
+###
+S3 Select + Glacier Select
+###
+retrieve less data using SQL by performing server sidee filtering in advance
+can filter by rows + columns (simple SQL statements)
+result in less network transfer + less CPU cost client-side
+
+S3 select can be used with Hadoop
+transfer filtered data set from S3 before analyzing it with your EMR cluster
+
+###
+ElastiCache
+###
+RDS = managed Redis or Memcached service
+AWS takes care of all OS maintenance
+caches are in-memory databases with really high performance + low latency
+helps reduce load off of databases for read intensive workloads
+helps make application stateless
+write scaling using shards
+read scaling using read replicas
+multi AZ with failover capability
+
+Redis overview
+in memory key-value store
+super low latency (sub ms)
+cache survives reboot by default = persistence
+more popular
+use case - user sessions, leaderboard, distributed states, relieve pressure off databases, pub/sub capability for messaging
+
+Memcached service
+in-memory object store (like S3)
+cache doesn't survive reboots
+use cases- quick retreival of objects from memory
+
+####
+DynamoDB
+####
+fully managed, highly available with replication across 3AZ
+NoSQL database - not a relational db
+scales to massive workloads, distributed DB
+can handle millions of requests per sec
+contain trillions of rows, TBs of storage
+fast + consistent performance = low latency on retrieval
+enable event driven programming with DynamoDB streams
+low cost + autoscaling capabilities
+
+DynamoDB is made of tables
+each table has primary key - must be decided at creation time
+
+each table can have an infinite number of items (similar to row)
+each item has attributes - can be added over time, can be null
+max size is 400KB
+
+data types supported are
+- scalar - string, number, binary, boolean, null
+- document - list, map
+- set - string set, number set, binary set
+
+primary keys
+option 1 - partition key only (hash)
+partition key must be unique for each time
+must be diverse so data is distributed
+ex: user_id = partition key for users table
+
+option 2 - partition key + sort key
+combo must be unique
+data is grouped by partition key
+sort key (aka range key) is used to sort items within the partition
+ex: user-games table
+user_id = partition key
+game_id = sort key
+
+when to use - need to ingest data at scale with quick reads
+use cases:
+mobile apps
+gaming
+ad serving
+live events
+sensor networks
+metadata storage for web-based content
+web session management
+
+when not to use
+- need to perform joins or complex transactions
+- storing binary large object (BLOB) - due to DynamoDB 400KB max size best to store data in S3 + metadata in Dynamo
+
+####
+Provisioned throughput
+####
+provision read + write capacity units
+Read Capacity Unit (RCU) = throughput for reads
+Write Capacity Units (WCU) = throughput for writes
+can setup auto-scaling in addition to base RCU + WCU
+or don't provision anything with on-demand option but very expensive
+
+throughput can be exceeded temporarily using burst credit
+if you kill credits > ProvisionedThroughputException
+it's advised to do expoential backoff retry
+
+# writes
+1 WCU = 1 write / 1 second for 1 item to 1 KB in size
+if an item is larger than 1 KB, more WCU are consumed
+ex 1: 10 object / second of 2KB each = need 2 * 10 = 20WCU
+ex 2: write 6 objects / second of 4.5 KB each
+need to round up the KB to 5 KB each
+6 objects * 5 KB = 30 WCU
+
+# reads
+strongly vs eventually consistent reads
+eventual = possible to get unexpected response bc of replication
+strong = read just after write > get correct data
+dynamo defaults to eventually consistent reads
+can set ConsistentRead to True for GetItem, Query, and Scan calls
+
+1 RCU = 1 strongly consistent read / second for an item up to 4KB
+1 RCU = 2 eventually consistent reads / second for an item up to 4KB
+if item is larger than 4 KB, need more RCU so you need to round up to the next 4KB
+ex 1: 10 strongly consistent reads per second of 4 KB each = 10 RCU
+ex 2: 16 eventually consistent reads per second for 12 KB each
+(16 reads / 2 eventually per second) * (12 KB / 4 KB per second) = 24 RCU
+ex 3: 10 strongly consistent reads per second of 6 KB each
+(10 / 1 strongly consistent read per sec) * (8KB / 4 KB per sec) = 20 RCU
+
+# throttling
+if we exceed RCU or WCU, we get ProvisionedThroughputExceededException
+reasons
+- hot keys/partitions
+(ex: many reads on popular item)
+- very large items
+solution
+exponential backoff when exception is encountered (already built in the SDK)
+distribute partition keys as much as possible
+if still RCU issue - use DAX for caching
+
+#####
+How DynamoDB partitions work
+#####
+you start with 1 parition
+each partition can contain up to
+- 3000 RCU
+- 1000 WCU
+- 10 GB
+
+the RCU and the WCU will be spread evenly amongst all the partitions in the table
+ex: table settings
+3 partitions
+total 6000 RCU
+total 2400 WCU
+each partition gets 2000 RCU + 2400 WCU
+
+how to compute # of partitions
+capacity = (total RCU / 3000) + (total WCU / 1000)
+size = total GB / 10 GB
+CEILING = smallest integer value that is greater than or equal to a number
+total partitions = CEILING(MAX(Capacity, Size))
+total partitions = CEILING(MAX((total RCU / 3000) + (total WCU / 1000), (total GB/ 10 GB)))
+
+####
+DynamoDB API
+####
+# write data
+PutItem - write data to DynamoDB
+create data or full replace
+consumes WCU
+
+UpdateItem - update data in DynamoDB
+partial update of attributes
+
+ConditionalWrites
+accept write/update only if conditions are respected, otherwise reject
+helps with concurrent access to items
+no performance impact
+
+# delete data
+DeleteItem - delete individual row
+able to perform a conditional delete
+
+DeleteTable - delete whole table + all its items
+much quicker deletion than calling DeleteItem on all items
+
+# batch writes
+BatchWriteItem
+reduce latency by reducing API calls
+operations are done in parallel for better efficiency
+however it is possible for part of the batch to fail > DynamoDB notes which failed + we need to retry using exponential backoff algorithm
+
+up to 25 PutItem or DeleteItem in 1 call
+up to 16 MB per data written
+up to 400 KB per data per item
+
+# reads
+GetItem
+read based on primary key
+primary key = HASH or HASH-RANGE
+eventually consistent read by default
+strongly consistent reads = 2x RCU
+ProjectionExpression can be specified to include only certain attributes like SELECT in SQL
+
+BatchGetItem
+allows you to retreive up to 100 items or up to 16 MB of data
+each item is retreived in parallel
+
+Query
+returns items based only on keys
+Partition Key (must be = operator)
+SortKey Value (=, <, <=, >=, Between, Begin) - optional
+FilterExpression like WHERE in SQL for further client-side filtering
+It is applied after a Query finishes (so it doesn't reduce RCU used), but before the results are returned
+returns up to 1 MB of data or # of items specified in limit
+able to do pagination on the results
+
+Scan
+scan the entire table + then filter out data
+inefficient unless you actually need all the data in the table
+returns up to 1MB of data - use pagination to keep on reading
+consume a lot of RCU
+limit impact on RCU using Limit or reducing the size of the result
+for faster performance, use parallel scans
+- multiple instances scan multiple partitions at the same time
+- increase throughput + RCU consumed
+can use ProjectionExpression + FilterExpression
+
+####
+DynamoDB Indexes
+####
+allow you to do different types of queries on table beyond partition keys
+
+# Local Secondary Index (LSI)
+alternate sort key for a given partition key value
+up to 5 LSI per table
+sort key = 1 scalar attribute (string, number, or binary)
+must be defined at table creation time
+
+# Global Secondary Index (GSI)
+speed up DynamoDB queries on non-key attributes
+create a new subtable with a GSI = partition key + optional sort key
+project the attributes you want in this subtable
+partition key + sort key from the original table will always be projected (KEYS_ONLY)
+you can also specify extra attributes to project (INCLUDE)
+or you can simply keep all attributes from the main table (ALL)
+must define RCU / WCU for the subtable
+possible to add + modify GSI after table creation
+
+https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
+global secondary index
+allows you to set a totally different primary key + optional sort key than what is in the base table
+global bc queries on the index can span all data in the base table across all partitions
+stored in its own partition - own RCU + WCU
+
+local secondary index
+uses the same partition key as the base table, but uses a different sort key
+used when you need to query by something different than the original partition + sort key
+local bc only looking at items in a the same partition bc still using the same partition key
+
+###
+DynamoDB DAX
+###
+seamless cache for DynamoDB requiring no application rewrites
+writes go through DAX to DynamoDB
+microsecond latency for cached reads + queries
+solves hot key problem (too many reads) > reduce RCU
+5 min TTL for cache by default
+can have up to 10 nodes in the cluster
+multi AZ (recommended to have at least 3 nodes in production)
+secure (encryption at rest, KMS, VPC, IAM, CloudTrail)
+
+apps communicate directly with DAX + DAX interacts with the DynamoDB table
+benefit = DAX will cache what we need right away
+
+doesn't autoscale - need to provision in advance
+
+###
+DynamoDB streams
+###
+react to changes to our DynamoDB table in realtime
+CRUD operations > DynamoDB stream > Lambda
+ex: react to new user registration > welcome email
+hard limit of 24 hours of data retention
+configurable batch size that lambda receivese = up to 1000 rows or 6MB of data
+
+DynamoDB streams kinesis adapter
+use the KCL library to directly consume DynamoDB streams
+DynamoDB stream > kinesis adapter library
+
+To read from DynamoDB streams you can either use Lambda or KCL library with the Kinesis adapter
+
+###
+DynamoDB TTL
+###
+automatically delete an item after expiration date/time
+provided at no extra cost + does not use WCU/RCU
+background task operated by DynamoDB service itself
+helps reduce storage + manage table size over time
+can also be used to adhere to regulatory norms - like we only store user data for X days
+enable TTL per item - by adding a TTL column + adding expiration date as value expire_on field
+DynamoDB typically deletes expired items with 48 hours of expiration
+deleted items also deleted in GSI/LSI
+if you accidentially delete items you can recover them from the DynamoDB streams (available for 24 hours)
+
+#####
+DynamoDB additional topicsq
+#####
+Security
+	VPC endpoints available to access DynamoDB without the internet
+	Access controlled by IAM
+	Encryption at rest using KMS
+	Encryption at transit using SSL/TLS
+Backup + restore feature available
+	Point in time restore like RDS
+	No performance impact
+Global tablese
+	Multi-region fully replicated, high performancee
+Can use Database Migration Service (DMS) to migrate to DynamoDB
+Can launch local DynamoDB on your computer for dev purposes
+
+####
+DynamoDB storing large objects
+####
+store object in S3 + add row to DynamoDB with metadata
+even for items that are under 400KB this is a good solution for items that are going to be read very little

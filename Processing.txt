@@ -1,0 +1,382 @@
+######
+Lambda
+######
+in the world of big data - used to process data as it is moved around from one service to another
+lambda can be triggered by time like cron but primarily event driven
+lambda must be in the same account as the service triggering it, in addition to having an IAM policy granting it access
+if your code does fail for some reason lambda will automatically retry 3 times
+https://aws.amazon.com/about-aws/whats-new/2019/11/aws-lambda-supports-max-retry-attempts-event-age-asynchronous-invocations/
+
+######
+Kinesis > Lambda
+######
+kinesis is not pushing data to lambda
+lambda polls for data from kinesis stream periodically in batches
+max batch size is 10,000 records
+too large of a batch size can cause timeouts (max timeout is 15 minutes)
+max batch size is 6MB
+
+if lambda fails it will retry until it succeeds or the data expires
+this can stall the shards if you don't handle errors properly
+this is because the kinesis stream is just waiting for the lambda to complete before proceeding
+aka lambda processes shard data synchronously
+
+#####
+Lambda Example
+#####
+need to base64 decode incoming kinesis data records
+
+#####
+Glue
+#####
+
+#######
+Glue crawler + catalog
+#######
+s3 partitions
+make sure your data is structured by how you want to query the data
+
+glue crawler
+discovery + publish S3 schema so it can be used for analysis tools (Athena, Redshift, EMR)
+also registers partitions
+
+glue crawler publishes schema in glue catalog
+
+glue catalog
+serves as a central metadata repository for data lake in S3
+stores where the data exists in s3, what the schema of the data is, how it is partitioned, etc
+can provide metadata to Hive on EMR
+
+when you create tables and databases manually, Athena uses HiveQL data definition language (DDL) statements
+such as CREATE TABLE, CREATE DATABASE, and DROP TABLE
+under the hood to create tables and databases in the AWS Glue Data Catalog
+
+#######
+Glue ETL jobs
+#######
+build custom ETL serverless Spark jobs > transform, clean, and enrich data before doing analysis
+can also automatically generate code in Python (or Scala) to perform ETL
+encryption features - SSE at rest, SSL in transit
+can be event-driven via triggers, not just on a schedule
+can provision additional DPUs (data processing units) if underperforming
+errors reported to cloudwatch
+format conversions - CSV, JSON, Avro, Parquet
+
+built in transformations
+DropFields, DropNullFields - perform cleanup by dropping null fields
+Filter - specify a function to filter records
+Join - enrich data from another table
+Map - add/delete fields beyond a join
+
+ML transformations
+FindMatches ML
+used to ID duplicate or matching records in the data set
+even when the records do not have a common unique identifier and no fields match exactly
+
+can also use built-in Spark transformations
+including K-Means machine learning library
+
+development endpoints
+can develop ETL in a notebook
+then create a glue job to run the script
+
+endpoint is in a VPC controlled by security groups
+can use elastic IPs to access a private endpoint address
+connect via Zeppelin running on local machine
+Zeppelin notebook server running on EC2
+can use Sagemaker notebooks
+can open terminal window (my method)
+PyCharm
+
+running glue jobs
+scheduler - like cron
+job bookmarks - allows you to pick up where you left off in the last job run
+persists the state of the job run
+avoids processing old data
+works best with keeping track of where you left off in S3
+can integrate with Cloudwatch events so after Glue job completed > trigger SNS/Lambda
+can invoke EC2 run, send event to kinesis stream, or activate step function in AWS Data Pipeline
+
+#######
+Glue cost + antipatterns
+#######
+billed by the minute for crawler + ETL jobs
+first million objects stored are free
+development endpoint is charged per minute
+
+anti-patterns
+- should not be used for real-time processing
+supposed to be used for batch processing
+
+- shouldn't be used with DynamoDB because it is for fast lookups + requires no schema
+Glue is all about defining schema over S3
+
+- better off using EMR or AWS Data Pipeline if working with other engines already
+
+######
+EMR
+######
+managed Hadoop framework on EC2 instances
+
+Hadoop
+- HDFS
+- YARN
+- MapReduce
+
+Architecture
+1 master/leader node
+manage cluster
+runs all software compontents required to coordinate distribution of data + distribution of tasks
+
+core nodes
+run tasks that analyze data
+store data in HDFS
+
+task nodes
+only run tasks
+do not store data
+good use of spot instances
+scale up + down as needed
+
+Transient vs Long-running clusters
+transient cluster = only use capacity you need
+perform a bunch of steps
+store results
+shutdown cluster
+
+long-running cluster
+use cluster to store data as a data warehouse
+enable termination + autotermination protection
+
+EMR/AWS integration
+let Amazon manage hosts on EC2
+can run cluster in VPC for security purposes
+can use S3 to store input + output data
+integrate with CloudWatch to monitor performance
+can use with CloudTrail to audit requests
+integrate with AWS Data Pipeline - can spin up + shut down transient EMR cluster as part of the pipeline
+
+######
+EMR Storage
+######
+HDFS
+stores data across different instances in the cluster
+try to analyze data on the instance where the data is stored
+stores multiple copies of data on different instances
+if you have a large file stored in HDFS, that file is going to be broken into blocks + those blocks are going to be stored in multiple places for backup purposes
+default block size is 128MB = ideal size to break your files into for sstorage in HDFS
+HDFS is ephemeral = when you terminate the cluster the data is gone
+
+EMRFS = file system that looks like HDFS but is backed by S3
+
+EMRFS consistent view
+if you have a bunch of different nodes trying to write or read from S3 at the same time > consistency problem
+behind the hood uses DynamoDB database to store S3 metadata
+
+local file system is also available for storage
+useful for storing temporary data like buffers + caches
+
+EBS for HDFS
+AWS automatically attach general purpose SSD 10 GB volume as root device
+used to enhace performance as root volume
+you can only attach EBS volumes when launching a cluster, not if the cluster is already running
+you cannot remove an EBS volume after launching
+
+#####
+EMR promises
+#####
+EMR charges by the hour + EC2 charges
+EMR will provision new nodes if core nodes failYou can add and remove task nodes on the fly
+You can resize running cluster's core nodes
+
+#####
+Apache Spark
+#####
+uses in-memory caching
+uses DAGs to optimize query execution
+are not meant for OLTP or batch processing
+meant for analytical applications or doing larger tasks on a regular schedule
+
+Spark context object = driver program/script
+actual code
+will use YARN as cluster manager in EMR to determine how to distribute the work and aquires executor nodes to perform the work
+executor nodes = processes that run computations and store the data for the application
+the application code is sent to each executor
+spark context sends the tasks for the executor to run
+
+Spark core = foundation of the platform
+
+Spark SQL contains dataset construct
+makes it easy to import data as if it is a giant database
+allows you to run SQL queries against thee dataset
+
+Spark streaming for streaming analytics
+ingests data in mini batches
+can use the same application code you would use for conventional Spark batch analytics
+so it improves developer productivity
+
+Other spark libs:
+MLLib
+GraphX
+
+Spark Structured Streaming
+use dataset = like database table
+can imagine spark streaming = database table that keeps growing forever
+can query data over windows of time
+
+Spark Streaming + Kinesis
+can import data into Spark Streaming from Kinesis Data Stream
+
+Spark +  Redshift
+spark-redshift package makes it easy to query Redshift from spark job
+useful for ETL using Spark
+
+######
+Apache Hive
+######
+write SQL like code over unstructured data
+
+EMR Hive sits on top of MapReduce + figures out how to distribute the processing of that SQL  on the underlying data in S3
+
+provides interactive web interface to enter SQL queries
+even though it is interactive it isn't fast
+good for high level SQL queries over large data sets
+
+Hive is trying to impart structure on unstructured data
+hive metastore stores info about what the diff columns of the raw data mean including column names+ data types
+
+It is possible to store your Hive Metastore within the Glue Data Catalog.  This is valuable because you can keep this metadata available even after the EMR cluster shuts down.
+
+By default the Hive metastore stores metadata in a MySQL database on the master node of your EMR cluster
+
+You can store the Hive metastore in an external RDS instance or Aurora rather than storing on the central node of an EMR cluster
+
+You can use Hive to read/write directly to/from S3 in EMR, allowing you to avoid writing to local temporary files
+
+DynamoDB integration
+process DynamoDB data using Hive
+define external Hive table based on DynamoDB table
+Hive allows you to copy data from DynamoDB into EMRFS or HDFS and vice versa
+
+######
+Apache Pig
+######
+Alt interface in MapReduce
+Pig Latin = scripting language - SQL style sequence that runs MapReduce jobs under the hood
+
+######
+HBase on EMR
+######
+non-relational unstructured database
+PB scale
+fast queries bc storing data in memory
+HBase integrates with Hive - use SQL over data stored in HBase = faster than querying over HDFS/EMR because in-memory
+
+HBase sounds a lot like DynamoDB
+advantages of DynamoDB
+- fully managed serverless solution with autoscaling
+- don't have to manage EMR cluster
+- integration with other services
+advantages of HBase
+- better at storing sparse data - data spread all over the cluster
+- offers high write + update throughput = better performance vs DynamoDB
+
+can also export Hbase to S3 and vice versa
+
+######
+Presto
+######
+can execute single SQL query over many different data stores at once (ex: joining tables in different systems)
+offers interactive queries at pedabyte scale
+similar to HBase, but even faster
+
+Apache Hive differs from Presto in that Hive uses MapReduce and therefore stores intermediate results on local disk while Presto does not use MapReduce and stores intermediate results in memory
+
+#####
+Zeppelin and EMR notebooks
+#####
+run scripts against data stored on EMR cluster interactively via web browser
+
+execute SQL queries via SparkSQL
+query results can be visualized in charts + graphs
+makes Spark feel more like a data science tool
+
+EMR notebook
+only available via AWS console
+similar to Zeppelin, but with more AWS integration
+automatically stored/backed up in S3
+allows you to run scripts to do work like spin up an EMR cluster, do a job, and tear the cluster down
+doesn't need to run on a running EMR cluster
+built in graphical libraries > graphs + charts
+multiple users can use the notebooks
+provided at no additional charge for EMR customers
+
+#####
+Assorted EMR tools
+#####
+Hue (Hadoop User Experience)
+front end console to manage the entire EMR cluster
+
+Splunk = operational tool used to visualize your EMR + S3 data in your cluster
+
+Flume
+moves streaming log data into EMR cluster
+
+MXNet
+library to perform deep learning on data stored over an EMR cluster
+
+S3DistCP
+tool used for copying massive amounts of data from S3 into HDFS + vice versa
+uses MapReduce under the hood
+
+ultimately you can install anything on EMR
+bc it's not serverless
+
+#####
+How to choose the right instance type
+#####
+master - general purpose M type
+core + task nodes can use general purpose M type nodes, but you may want to choose a more appropriate node for the job
+
+ex: computationally intensive machine learning work would benefit from more CPUs
+ex: memory-caching applications like Spark - use high memory instance
+ex: both network + CPU intensive ML algorithms requiring data sets outside the cluster - choose cluster compute instance
+
+########
+AWS Data Pipeline
+########
+web service for reliably processing + moving data between diff AWS compute + storage services
+task scheduling framework  where you can run different operations that depend on each other at different schedules
+
+ex: log files from EC2 > S3 > analyze via EMR
+can orchestrate with data pipeline
+
+destinations - S3, RDS, DynamoDB, Redshift + EMR
+manages task dependencies
+will auto retry (default 3 up to 10) + notify via on failure alarm
+pipelines can work across regions
+can add pre-condition checks - either built in or execute custom script via bash command
+data sources may be on prem
+
+activities = action - EMR, Hive, Copy, SQL, scripts
+
+########
+AWS Step Functions
+########
+used to design workflows
+easy visualization
+advanced error handling + retry mechanism outside the code
+can maintain audit history of workflows
+wait between steps
+max execution time of a state machine is  1 year = can handle long lived processes/workflows
+defined using JSON based Amazon Steps Languagee (ASL)
+
+can also be used to monitor a single job using  built in error handling + retry
+
+https://stackshare.io/stackups/aws-data-pipeline-vs-aws-step-functions
+AWS Data Pipeline can be classified as a tool in the "Data Transfer" category
+AWS Step Functions is grouped under "Cloud Task Management"
+
+https://stackoverflow.com/questions/55061621/aws-data-pipeline-vs-step-functions
+Data Pipeline specializes for import/output with AWS data storage resources
+Step Functions are good candidate tying together lambda jobs

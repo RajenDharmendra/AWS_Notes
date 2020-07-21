@@ -1,0 +1,283 @@
+##########
+collection
+##########
+
+##########
+overview
+##########
+move data into AWS
+
+real time > immediate action
+# kinesis data streams
+# SQS
+# IoT
+
+near-real time > reactive action
+# kinesis firehose
+# DMS
+
+batch = historical analysis
+# Snowball
+# Data pipeline
+
+##########
+kinesis streams
+##########
+managed alternative to Kafka
+great for real-time big data
+data is automatically replicated syncronously in 3 AZ
+
+streams - low latency to ingest at scale
+made up of shards/partitions
+producer > stream containing many shards > consumer
+default only stores 24 hours but can retain up to 7 days
+can reprocess/replay data as long as it is available in the stream
+so multiple applications can be reading from the same stream
+it is an append only data store - the data within kinesis stream is immutable
+
+shards
+one stream is made of many shards
+billed per shard
+# of shards per stream can change (reshard or merge)
+records are ordered per shard based on when they are received
+
+records contain
+1. data blob
+up to 1 MB
+serialized as bytes so contain whatever you want
+
+2. record key
+sent along with the data blob
+provided by producer
+helps group records in shards
+same key = same shard
+use highly distributed key to avoid hot partition problem
+
+3. sequence number
+added by kinesis, not by the producer
+unique ID for each record in the shard
+
+producer limits
+1 MB or 1000 messages/sec at write per shard
+if you exceed this then you will receive a ProvisionedThoroughputException error
+
+consumer classic
+2MB/second per shard across all the consumers
+OR
+5 API calls per second per shard across all the consumers
+
+consumer enhanced fan out
+2MB/second per read per shard per enhanced consumer
+No API calls needed - uses a push model
+better scaling
+
+data retention
+24 hours by default
+can extend to 7 days
+
+########
+kinesis producers
+########
+kinesis SDK - can use boto library
+kinesis producer library (KPL) - more advanced, better code, enhanced thoroughput
+kinesis agent - linux program that runs on servers - allows you to get log file + send to kinesis stream
+third party libraries - spark
+
+kinesis SDK
+PutRecord or PutRecords
+PutRecords uses batching = better thoroughput
+but have to be careful to avoid ProvisionedThoroughputExceeded error
+use cases - lower thoroughput, higher latency, simple API, AWS lambda
+
+managed services for kinesis data streams
+use SDK behind the scenes
+include CloudWatch Logs, AWS IoT, and Kinesis Data Analytics
+
+ProvisionedThoroughputException
+exceeding # of MB/second or records/second for any shard
+need to avoid a hot partition
+need to distribute as much as possible to avoid hot partition
+solution
+1. add retries with backoffs
+2. increase # of shards
+3. ensure you have a good partition key
+ex: instead of using ios or android as a key, use the device ID
+
+kinesis KPL
+C++/Java library
+high performance, long-running producers
+automated and configurable retry mechanism built in
+synchronous (same as SDK) or asynchronous (better performance) API
+compression is not available out of the box
+submits metrics to CloudWatch for monitoring
+*supports batching*
+aggregate a bunch of tiny records up to 1 MB and then post to kinesis stream as 1 API call
+we can influence batching efficiency by introducing some delay with RecordMaxBufferedTime (default 100ms) so some latentecy with the tradeoff of being more efficient
+
+kinesis agent
+install on Linux-based server environments only
+monitor log files + send to kinesis data streams
+built on top of the KPL
+you can even preprocess data before sending to stream
+emit metrics to CloudWatch for monitoring
+
+#####
+kinesis consumers
+#####
+Kinesis SDK (boto3)/CLI
+Kinesis Client Library (KCL)
+Kinesis Connector Library
+3rd party libraries - Spark
+Kinesis Firehose
+Lambda
+
+GetRecords
+Consumer SDK - GetRecords
+Classic
+records are polled by consumers from the shard
+polling because the consumer makes a GetRecords() request and then ingests the data
+each shard has 2MB total aggregate throughput per second
+however can return a total of up to 10 MB of data
+if 10MB is rturned then you have to wait 5 seconds before the next call
+or you can pull upto 10,000 records
+
+max 5 GetRecords API calls per shard per second
+200ms latency
+
+if 5 consumer applications consume from the same shard, then each consumer can poll once per second and receive less than 400 KB/second
+all consumers share the same limit of 2MB per shard and 5 GetRecords API calls per second
+
+Kinesis Client Library (KCL)
+Java First, but exists for Python
+Read records produced by KPL and performs de-aggregation
+
+know that the kinsis connector library exists
+although it is pretty much deprecated now
+
+lambda consumer
+has a library to take care of de-aggregating records from the kinesis producer library
+used to run lightweight ETL
+Lambda has a configurable batch size to manage thoroughput
+
+kinesis enhanced fanout
+works with Kinesis Consumer Library 2.0 and lambda
+each consumer gets 2mb/s of provisioned thoroughput per shard
+no longer need to poll for data
+after running SubscribeToShard() the shard will automatically push data
+reduce latency ~70 seconds
+
+#####
+kinesis scaling
+#####
+adding shards = shard splitting
+you can divide hot shards which will terminate the hot shard and create 2 new ones
+an old shard is active until all the data is expired
+
+merge shards
+decrease stream capacity and reduce costs
+can be used to merge 2 shards with low traffic
+old shards will be closed and deleted after all data has expired
+
+autoscaling
+not a native feature of kinesis
+have to do it manually
+
+can only perform one sharding operation at a time and it takes a few seconds
+for 1000 shards it takes over 8 hours to double the shards to 2000
+kinesis scaling takes time
+
+kinesis security
+control access/auth with IAM
+can enable encryption in flight using HTTPS endpoint
+add encryption at rest using KMS
+encrypt message client side is hard
+VPC endpoint available to access Kinesis not on public internet but within private VPN
+
+######
+kinesis firehose
+######
+fully managed service
+near real time because there is a 60 second latency minimum if the batch is not full
+load data into redshift, redshift, s3, or splunk
+automatic scaling
+no data storage = only data transfer
+
+######
+SQS
+######
+fully managed
+scales from 1 message to 10,000 message per second
+default retention 4 days can be up to 14 days
+no limit to # of messages in queue
+low latency (<10ms on publish and receive)
+can have duplicate messages
+can have out of order messages (best effort ordering) - although now offer FIFO option
+265kb per message sent
+
+SQS consumers
+poll SQS for messages - up to 10 messages at a time
+need to process the message within the visibility timeout period  - this is the time in which the message is invisible to otheer consumers
+the consumer must delete the message using the message ID and receipt handle
+
+what if you want to send messages larger than 256kb?
+SQS extended client = Java library
+producer - send large message to S3 + send small metadata message to SQS
+consumer - reads small metadata message + reads large S3 file
+
+SQS limits
+120,000 in-flight messages (received from a queue by a consumer, but not yet deleted from the queue)
+10 messages per batch
+each message max size of 256KB
+message content is text
+standard queues have unlimited transactions per second
+FIFO queue supports 300 operations per second (with up to 10 messages per batch)
+
+SQS security
+encryption in fight using HTTPS endpoint
+enable server side encryption (SSE) using KMS (key management service) - only encrypts the body not the metadata
+
+SQS vs Kinesis
+SQS messages can NOT be processed by multiple consumer applications
+used to decouple applications
+dynamic scaling of load (no-ops)
+256KB max
+
+Kinesis is a better option when working with multiple consumer applications
+data will be deleted after the retention period
+ordering of records per shard record
+pub/sub
+streaming maprduce querying capability
+checkpointing available via kinesis client library
+shards (capacity) must be provided ahead of time
+1MB max
+
+######
+IoT
+######
+https://aws.amazon.com/iot-core/features/
+we deploy IoT things = lightbulb, car, etc
+we want to configure them and receive data from them
+IoT registered in Thing registery
+IoT thing needs to communicate to the cloud via Device gateway = managed service
+IoT thing > send message to IoT message broker > send message to destination
+destinations can include
+- IoT rule engine > send message to Kinesis, SQS, Lambda, etc
+- Device Shadow - can communicate back to device
+
+IoT rule engine
+can define how to modify the behavior of your devices
+actions = send events to other targets like lambda or database
+
+supports MQTT, Websockets, or HTTP 1.1 protocols
+
+authentication
+IoT policies are JSON documents that are attached to IoT things that manage X.509 certificates or Cognito identities
+
+rules engine
+rules = when it's triggered
+action = what it does
+IoT topic > Iot rule > Iot rule action > AWS services
+
+IoT greengrass
+brings compute layer directly to the device
+can run lambda functions directly on your device!

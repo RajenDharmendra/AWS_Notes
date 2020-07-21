@@ -1,0 +1,295 @@
+https://en.wikipedia.org/wiki/Data_warehouse
+data warehouse
+system used for reporting and data analysis
+central repositories of integrated data from 1+ disparate sources
+store current and historical data in a single place
+used for creating analytical reports throughout the enterprise
+
+https://en.wikipedia.org/wiki/Data_mart
+data mart = subset of data warehouse
+usually oriented to specific business line or team
+info in a data mart pertains to a specific department
+
+data marts exist because info the in the database is not organized in a way that makes it readily accessible >
+queries are too complicated + resource consuming
+
+while transactional databases are designed to be updated, data warehouses + marts are read only
+data warehouses are designed to access large groups of related records
+data marts improve end-user response time by allowing users to have access to a specific type of data they need to view most often
+provide data in a way that supports the users
+
+https://medium.com/@BluePi_In/deep-diving-in-the-world-of-data-warehousing-78c0d52f49a
+data warehousing helps implement
+- fetching data from multiple heterogenous data sources
+- clean, filter, and transform data for insights
+- store the data in a form and manner that is easy to access, understand, and use
+
+##############################
+DW from business perspective
+##############################
+You are in charge of a retailer’s data infrastructure. Let’s look at some business activities.
+
+Customers should be able to find goods & make orders
+Inventory Staff should be able to stock, retrieve, and re-order goods
+Delivery Staff should be able to pick up & deliver goods
+HR should be able to assess the performance of sales staff
+Marketing should be able to see the effect of different sales channels
+Management should be able to monitor sales growth
+
+In a simple world this could potentially be performed in a relational database
+
+However in the real world things to consider are:
+Retailer has a nation-wide presence → Scale? A relational database can only grow vertically
+Acquired smaller retailers, brick & mortar shops, online store → Single database? Complexity? Now have many systems to integrate
+Has support call center & social media accounts → Tabular data? Will likely be messy non-relational data
+Customers, Inventory Staff and Delivery staff expect the system to be fast & stable → Performance
+HR, Marketing & Sales Reports want a lot information but have not decided yet on everything they need → Clear Requirements?
+
+##############################
+DW from technical perspective
+##############################
+data warehouse definitions
+copy of transaction data specifically structured for query and analysis
+
+subject-oriented = no one size fits all
+integrated = data from many sources
+nonvolatile = not transient, needs to be persisted
+time-variant collection of data = I can ask the same question from one day to the next and it is going to change
+
+retreives + consolidates data periodically = continuous data integration
+from source systems into dimensional or normalized data store
+keeps years of history + queried for business intelligence
+typically updated in batches + not every time a transaction happens in the source system
+
+data in
+ETL
+extract data from the source system used for operations
+transform the data
+load into a dimensional model
+
+dimensional model
+designed to make it easy for business users to work with the data
+improve analytical query performance
+technologies used for storing dimensional models are different than traditional technologies
+
+data out
+BI apps
+visuals/reportings
+
+data warehouse goals
+simple to understand
+performant
+quality assured
+handle new questions well
+secure
+
+fact + dimension tables
+facts - should contain numeric + additive values
+a comment on an article is an event but not easily added = not a good fact
+an invoice number is numberic but adding it does not make sense = not a good fact
+total amount of an invoice can be added = good fact
+
+dimensions - should contain more contextual info
+date + time = good dimensions
+physical locations + their attributes
+
+exercises demonstrate moving from 3NF to dimension tables
+all needed dimensions are available in the fact table
+eliminates the need for deep joins
+star schema is easy to understand and write queries against
+queries with the star schema are more performant
+
+########################
+Kimball's bus architecture
+########################
+source transactional data > back room
+aka kitchen = prepare data to be served
+ETL system
+- transforms from source to target
+- conforms dimensions
+- no user query support
+
+front room = presentation area
+aka dining room = where the data is served to the customer
+- data organized into dimensional models
+- atomic level always needs to be available to get raw source data
+pre-aggregations are possible but also need to have raw source data
+- organized by business processes!
+does not allow for individual department specific modeling processes
+build dimensions so that they are usable by the entire organization
+ex: date + product dimension should be used across the organization, not for each department
+- requires careful big picture design
+- design goals = ease of use + query performance
+
+application
+where user can interact
+- ad hoc queries
+- standard reports
+- analytics apps
+
+ETL = a bit more involved than copying from SQL to SQL
+extracting
+- need to transform the transactional tables to dimensions tables
+- get data from its source
+
+transform
+- integrate many sources together
+- possibly cleansing (inconsistencies, duplicates, missing values)
+- possibly producing diagnostic metadata about the quality of the source data
+
+loading
+- structure + load into the dimensional models
+
+########################
+independent data marts
+########################
+more ad-hoc, more messy, but happens in reality
+each department may have its own ETL process = totally unaware of each other, totally uncoordinated
+each department will setup their dimension models differently
+focused on 1 department + 1 business process
+problem = uncoordinated + incosistent use = get different results from different dimension tables
+
+########################
+Inmon's Corporate Information Factory (CIF)
+########################
+load normalized transactional source data > enterprise data warehouse in 3NF database
+then from the clean enterprise data warehouse > coordinated data marts
+BI application has the opportunity to get data from the data mart OR from transactional source data
+
+2 ETL processes
+source system > 3NF DB (enterprise data warehouse)
+3NF DB > department data marts
+
+3NF DB
+- single integrated source of truth for the data marts
+- could be accessed by end users if needed
+
+data marts
+- they can be aggregated bc we have the source data available in the 3NF DB
+
+########################
+Hybrid Kimball bus + Inmon CIF
+########################
+load normalized transactional source data > enterprise data warehouse in 3NF database
+instead of 3NF DB > departments data marts, use dw bus architecture
+bus architecture = dimensional models that span the entire organization
+setup by business processes not by department needs
+
+########################
+OLAP Cubes
+########################
+after building facts + dimension tables > querying + exporing + getting insights
+OLAP cube = aggregation of fact metrics on a number of dimensions
+cube = 3 dimensions
+can aggregate on more than 3 dimensions if you group more dimensions together
+easy to communicate to business users
+
+rollup
+less columns
+ex: roll up of month, movie, aggregate sales of each movie theater by country
+FEB				NY			Paris			SF
+Avatar			$25,000		$5,000			$15,000
+Star Wars		$15,000		$7,000			$10,000
+Batman			$3,500		$2,000			$3,000
+
+MARCH			NY			Paris			SF
+Avatar			$2,000		$5,000			$1,000
+Star Wars		$1,000		$7,000			$1,000
+Batman			$3,500		$2,000			$3,000
+
+drill down
+ex: decompose the sales of each city into smaller districs
+more columns
+OLAP cubes should store the finest grain of data (atomic data)
+allows us to drill down to the finest details > roll up as needed
+
+slicing
+restrict one of the dimensions by a single value
+ex: only keep MARCH dimension + remove other months
+MARCH			NY			Paris			SF
+Avatar			$2,000		$5,000			$1,000
+Star Wars		$1,000		$7,000			$1,000
+Batman			$3,500		$2,000			$3,000
+
+dice
+same dimensions but computing a sub-cube by restricting some of the values of the dimension
+ex: only concerned with FEB + MARCH, Avatar + star wars in NY
+FEB				NY
+Avatar			$25,000
+Star Wars		$15,000
+
+MARCH			NY
+Avatar			$2,000
+Star Wars		$1,000
+
+query optimization
+business users will want to slice, dice, rollup + drill down all the time
+
+GROUP BY CUBE(movie, branch, month)
+will make 1 pass through the facts tables + will aggregate all possible combos of groupings
+total revenue		revenue by movie		revenue by movie, branch		revenue by movie, branch, month
+					revenue by branch		revenue by branch, month
+					revenue by month		revenue by movie, month
+
+saving/materializing the output of a cube operation
+usually enough info to answer most questions from business users without having the process the fact table each time
+
+######################
+data warehouse technologies
+######################
+data is available
+- in understandable + performant data models
+- with conformed dimensions (same dimensions used throughout the org) or separate data marts (dimensions per department)
+- for users to report + visualize
+	- by interacting directly with the model via SQL queries
+	- in most cases through a BI application
+
+how do we serve OLAP cubes?
+approach 1
+pre-aggregate OLAP cubes
+save them on a special purpose non-relational database (MOLAP)
+MOLAP = multi-dimensional online analytical processing
+
+approach 2
+compute OLAP cubes on the fly or as a materialized view from existing relational databases where the dimensional models reside on ROLAP
+don't need special technology to get the job done
+ROLAP = relational online analytics processing
+
+aggregates
+https://en.wikipedia.org/wiki/Aggregate_(data_warehouse)
+used in dimensional models
+facts = numeric values that can be aggregated
+dimensions = almost like objects representing users, time, etc
+
+produce positive effects on the the time it takes to query large sets of data
+
+simplest form
+aggregate = simple summary table generated using group by
+
+more common
+take a dimension + change the granularity of this dimension
+when changing the grain of the dimension (from timestamp > day), the fact table has to be partially summarized to fit the new grain of the new dimension
+create new dimensional and fact tables as a result
+
+aggregates = pre-calculated summary data
+since aggregations are usually precomputed, partially summarized data > new aggregate tables
+
+when facts are aggregated you either
+1. eliminate dimensionality
+2. by associating the facts with a rolled up dimension
+rolled up dimensions should be shurnked versions of the dimensions associated with the granualar base facts
+should conform to the base dimension tables
+
+why aggregates can make such a dramatic increase in the performance of the data warehouse = reduce # of rows to be accessed when responding to a query
+
+having aggregates and atomic data > increase in the complexity of the dimensional model
+when a request is made, the data warehouse should return data from the table with the correct grain
+so when requests to the data warehouse are made, aggregate navigator functionality should be implemented > determine correct table with correct grain
+
+aggregator navigator
+examines the query to determine if it can be answered using smaller, aggregate table
+implementations
+- OLAP engines
+- materialized views
+- relational ROLAP
+- BI application servers or query tool
